@@ -1,0 +1,17 @@
+[mgr]
+show_hidden = true
+ratio = [1, 2, 4]
+[opener]
+edit = [
+    { run = 'vim "$@"', desc = "vim", block = true },
+]
+open = [
+    { run = 'xdg-open "$1"', desc = "open", for = "linux" },
+    { run = 'open "$@"', desc = "open", for = "macos" },
+]
+[open]
+rules = [
+	{ mime = "*/", use = "edit" },
+    { mime = "text/*", use = "edit" },
+	# { name = "*", use = "open" },
+]
