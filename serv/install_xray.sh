@@ -56,8 +56,8 @@ cat > /usr/local/etc/xray/config.json <<EOF
         "clients": [
           {
             "id": "$uuid",
-            "flow": "xtls-rprx-vision",
             "email": "$name"
+            "flow": "xtls-rprx-vision",
           }
         ],
         "decryption": "none"
@@ -79,7 +79,6 @@ cat > /usr/local/etc/xray/config.json <<EOF
   "outbounds": [
     {
       "protocol": "freedom",
-      "settings": {}
     }
   ]
 }
