@@ -7,6 +7,8 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
+touch install.log
+
 apt update && apt upgrade -y
 
 INSTALL="vim git curl wget ufw htop unzip tar file net-tools iputils-ping build-essential"
@@ -324,13 +326,13 @@ chmod 600 /usr/local/etc/xray/config.json
 
 systemctl restart xray
 
-PROXYVERSION=0.9.5
+proxyversion=0.9.5
 
 wget -q --show-progress --timeout=15 --tries=2 -O 3proxy.tar.gz \
-  https://github.com/z3APA3A/3proxy/archive/${PROXYVERSION}.tar.gz
+  https://github.com/z3APA3A/3proxy/archive/${proxyversion}.tar.gz
 
 tar -xzf 3proxy.tar.gz
-mv 3proxy-${PROXYVERSION} 3proxy
+mv 3proxy-${proxyversion} 3proxy
 rm 3proxy.tar.gz
 
 cd 3proxy
@@ -448,9 +450,15 @@ systemctl daemon-reload
 systemctl enable 3proxy
 systemctl start 3proxy
 
-echo ""
-echo "Ссылки для подключения proxy сохранены в $proxylinkfile:"
-cat "$proxylinkfile"
-echo ""
+apt update && apt upgrade -y
+
+cat >> install.log <<EOF
+Ссылки для подключения proxy сохранены в $proxylinkfile:"
+$(cat "$proxylinkfile")
+
 echo "Ссылки для подключения xray сохранены в $xraylinkfile:"
-cat "$xraylinkfile"
+$(cat "$xraylinkfile")
+EOF
+
+echo ""
+cat install.log
