@@ -16,6 +16,8 @@ apt install -y $INSTALL
 
 apt update && apt upgrade -y
 
+timedatectl set-timezone Europe/Moscow
+
 wget https://github.com/fastfetch-cli/fastfetch/releases/latest/download/fastfetch-linux-amd64.deb
 sudo apt install ./fastfetch-linux-amd64.deb
 rm fastfetch-linux-amd64.deb
@@ -353,12 +355,10 @@ fi
 
 rm -rf 3proxy
 
-read -p "Введите базовый порт для 3proxy (по умолчанию 44667): " baseproxyport
-if [ -z "$baseproxyport" ]; then
-    baseproxyport=44667
-fi
+read -p "Введите базовый порт для HTTP proxy (по умолчанию 44667): " httpproxyport
+httpproxyport=${httpproxyport:-44667}
 
-if ! [[ "$baseproxyport" =~ ^[0-9]+$ ]] || [ "$baseproxyport" -lt 1024 ] || [ "$baseproxyport" -gt 65535 ]; then
+if ! [[ "$httpproxyport" =~ ^[0-9]+$ ]] || [ "$httpproxyport" -lt 1024 ] || [ "$httpproxyport" -gt 65535 ]; then
     echo "Ошибка: Порт должен быть числом от 1024 до 65535"
     exit 1
 fi
@@ -367,6 +367,22 @@ read -p "Введите количество клиентов для HTTP proxy 
 proxyclicount=${proxyclicount:-1}
 
 if ! [[ "$proxyclicount" =~ ^[0-9]+$ ]] || [ "$proxyclicount" -lt 1 ]; then
+    echo "Ошибка: Количество клиентов должно быть положительным числом"
+    exit 1
+fi
+
+read -p "Введите базовый порт для SOCKS proxy (по умолчанию 44677): " socksproxyport
+socksproxyport=${socksproxyport:-44677}
+
+if ! [[ "$socksproxyport" =~ ^[0-9]+$ ]] || [ "$socksproxyport" -lt 1024 ] || [ "$socksproxyport" -gt 65535 ]; then
+    echo "Ошибка: Порт должен быть числом от 1024 до 65535"
+    exit 1
+fi
+
+read -p "Введите количество клиентов для SOCKS proxy [1]: " socksproxyclicount
+socksproxyclicount=${socksproxyclicount:-1}
+
+if ! [[ "$socksproxyclicount" =~ ^[0-9]+$ ]] || [ "$socksproxyclicount" -lt 1 ]; then
     echo "Ошибка: Количество клиентов должно быть положительным числом"
     exit 1
 fi
@@ -381,14 +397,13 @@ proxycfgfile="/etc/3proxy/3proxy.cfg"
 > "$proxycfgfile"
 
 cat >> "$proxycfgfile" <<EOF
+flush
 nscache 65536
 auth strong
 EOF
 
-currentport=$baseproxyport
-
 for ((i=0; i<proxyclicount; i++)); do
-    proxyport=$((currentport + i))
+    proxyport=$((httpproxyport + i))
     proxyusername="proxy${baseproxyusername}$((i+1))"
     proxyuserpass=$(openssl rand -base64 12 | tr -d '/+' | cut -c1-12)
 
@@ -400,21 +415,11 @@ flush
 EOF
 
     echo "http://$proxyusername:$proxyuserpass@$serverip:$proxyport" >> "$proxylinkfile"
-	echo "HttpProxy: $proxyport" >> openports.log
+    echo "HttpProxy: $proxyport" >> openports.log
 done
 
-currentport=$((currentport + proxyclicount))
-
-read -p "Введите количество клиентов для SOCKS proxy [1]: " socksproxyclicount
-socksproxyclicount=${socksproxyclicount:-1}
-
-if ! [[ "$socksproxyclicount" =~ ^[0-9]+$ ]] || [ "$socksproxyclicount" -lt 1 ]; then
-    echo "Ошибка: Количество клиентов должно быть положительным числом"
-    exit 1
-fi
-
 for ((i=0; i<socksproxyclicount; i++)); do
-    socksport=$((currentport + i))
+    socksport=$((socksproxyport + i))
     socksusername="socks${baseproxyusername}$((i+1))"
     socksuserpass=$(openssl rand -base64 12 | tr -d '/+' | cut -c1-12)
 
@@ -426,7 +431,7 @@ flush
 EOF
 
     echo "socks5://$socksusername:$socksuserpass@$serverip:$socksport" >> "$proxylinkfile"
-	echo "Socks5Proxy: $socksport" >> openports.log
+    echo "Socks5Proxy: $socksport" >> openports.log
 done
 
 chmod 600 /etc/3proxy/3proxy.cfg
@@ -449,6 +454,8 @@ EOF
 systemctl daemon-reload
 systemctl enable 3proxy
 systemctl start 3proxy
+
+wget https://raw.githubusercontent.com/nikita55612/install/main/proxyserv/servinfo.go
 
 apt update && apt upgrade -y
 

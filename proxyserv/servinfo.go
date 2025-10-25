@@ -53,6 +53,8 @@ func main() {
 
 	flag.Parse()
 
+	fmt.Println(*host, *port)
+
 	http.HandleFunc("/info", info)
 
 	addr := fmt.Sprintf("%s:%d", *host, *port)
