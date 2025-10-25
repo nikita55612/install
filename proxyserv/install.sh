@@ -11,7 +11,7 @@ touch install.log
 
 apt update && apt upgrade -y
 
-INSTALL="vim git curl wget ufw htop unzip tar file net-tools iputils-ping build-essential"
+INSTALL="vim git curl wget vnstat ufw htop unzip tar file net-tools iputils-ping build-essential"
 apt install -y $INSTALL
 
 apt update && apt upgrade -y
@@ -253,11 +253,11 @@ inboundsjson="["
 xraylinkfile="./xraylinks"
 > "$xraylinkfile"
 
-for ((i=0; i<xrayclicount; i++)); do
-    xrayport=$((xrayport + i))
+currentxrayport=$xray_start_port
 
-    xrayusername=$basexrayusername
-    [ $i -gt 0 ] && xrayusername="${xrayusername}${i}"
+for ((i=0; i<xrayclicount; i++)); do
+    xrayport=$currentxrayport
+    xrayusername="${basexrayusername}$((i+1))"
 
     xrayuuid=$(xray uuid)
     xraykeys=$(xray x25519)
@@ -302,8 +302,9 @@ EOF
     xraylink="vless://$xrayuuid@$serverip:$xrayport?security=reality&sni=$xraydesthost&pbk=$xraypublickey&sid=$xrayshortid&type=tcp&flow=xtls-rprx-vision&encryption=none#$xrayusername"
 
 	echo "Xray: $xrayport" >> openports.log
-
     echo "$xraylink" >> "$xraylinkfile"
+
+	currentxrayport=$((currentxrayport + 1))
 done
 
 inboundsjson+="]"
@@ -380,30 +381,29 @@ proxycfgfile="/etc/3proxy/3proxy.cfg"
 > "$proxycfgfile"
 
 cat >> "$proxycfgfile" <<EOF
-flush
 nscache 65536
 auth strong
 EOF
 
-current_port=$baseproxyport
+currentport=$baseproxyport
 
 for ((i=0; i<proxyclicount; i++)); do
-    proxyport=$((current_port + i))
-    proxyusername="${baseproxyusername}$((i+1))"
+    proxyport=$((currentport + i))
+    proxyusername="proxy${baseproxyusername}$((i+1))"
     proxyuserpass=$(openssl rand -base64 12 | tr -d '/+' | cut -c1-12)
 
     echo "users $proxyusername:CL:$proxyuserpass" >> "$proxycfgfile"
     cat >> "$proxycfgfile" <<EOF
 allow $proxyusername
-proxy -p$proxyport -a
+proxy -n -p$proxyport -a
+flush
 EOF
 
     echo "http://$proxyusername:$proxyuserpass@$serverip:$proxyport" >> "$proxylinkfile"
-
 	echo "HttpProxy: $proxyport" >> openports.log
 done
 
-current_port=$((current_port + proxyclicount))
+currentport=$((currentport + proxyclicount))
 
 read -p "Введите количество клиентов для SOCKS proxy [1]: " socksproxyclicount
 socksproxyclicount=${socksproxyclicount:-1}
@@ -414,18 +414,18 @@ if ! [[ "$socksproxyclicount" =~ ^[0-9]+$ ]] || [ "$socksproxyclicount" -lt 1 ];
 fi
 
 for ((i=0; i<socksproxyclicount; i++)); do
-    socksport=$((current_port + i))
-    socksusername="${baseproxyusername}socks$((i+1))"
+    socksport=$((currentport + i))
+    socksusername="socks${baseproxyusername}$((i+1))"
     socksuserpass=$(openssl rand -base64 12 | tr -d '/+' | cut -c1-12)
 
     echo "users $socksusername:CL:$socksuserpass" >> "$proxycfgfile"
     cat >> "$proxycfgfile" <<EOF
 allow $socksusername
 socks -p$socksport
+flush
 EOF
 
     echo "socks5://$socksusername:$socksuserpass@$serverip:$socksport" >> "$proxylinkfile"
-
 	echo "Socks5Proxy: $socksport" >> openports.log
 done
 
