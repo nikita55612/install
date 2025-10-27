@@ -16,3 +16,4 @@ set encoding=utf8
 set noerrorbells
 set novisualbell
 set noswapfile
+set clipboard=unnamedplus

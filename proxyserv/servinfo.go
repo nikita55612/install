@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
-	"os"
 	"os/exec"
 	"strings"
 	"sync/atomic"
@@ -39,24 +38,26 @@ func info(w http.ResponseWriter, req *http.Request) {
 	tsLast.Store(tsNow)
 
 	infoCache = ""
-	infoCache += strings.ReplaceAll(execCommand("fastfetch", "--pipe", "--structure", "separator:os:separator:host:kernel:uptime:packages:shell:de:wm:wmtheme:theme:icons:font:cpu:gpu:memory:disk:localip"), "[34C", "")
+	infoCache += strings.ReplaceAll(strings.ReplaceAll(execCommand("fastfetch", "--pipe", "--structure", "separator:os:separator:host:kernel:uptime:packages:shell:de:wm:wmtheme:theme:icons:font:cpu:gpu:memory:disk:localip"), "^[[34C", ""), "^[[31C", "")
+
+	infoCache += execCommand("vnstat")
+	infoCache += execCommand("vnstat", "-h")
+	infoCache += execCommand("vnstat", "-hg")
+	infoCache += execCommand("vnstat", "-5")
 
 	fmt.Fprintf(w, infoCache)
 
 }
 
 func main() {
-	fmt.Println(len(os.Args), os.Args)
-
 	host := flag.String("host", DEFAULT_HOST, "host 0.0.0.0")
 	port := flag.Int("port", DEFAULT_PORT, "port 8090")
 
 	flag.Parse()
 
-	fmt.Println(*host, *port)
-
 	http.HandleFunc("/info", info)
 
 	addr := fmt.Sprintf("%s:%d", *host, *port)
+	fmt.Printf("http://%s/info\n", addr)
 	http.ListenAndServe(addr, nil)
 }

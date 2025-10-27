@@ -7,6 +7,12 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
+SetBBR() {
+    grep -q "^net.core.default_qdisc=fq" /etc/sysctl.conf || echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf
+    grep -q "^net.ipv4.tcp_congestion_control=bbr" /etc/sysctl.conf || echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf
+    /usr/sbin/sysctl -p >/dev/null
+}
+
 touch install.log
 
 apt update && apt upgrade -y
@@ -19,7 +25,7 @@ apt update && apt upgrade -y
 timedatectl set-timezone Europe/Moscow
 
 wget https://github.com/fastfetch-cli/fastfetch/releases/latest/download/fastfetch-linux-amd64.deb
-sudo apt install ./fastfetch-linux-amd64.deb
+apt install ./fastfetch-linux-amd64.deb
 rm fastfetch-linux-amd64.deb
 
 if [[ $(cat /proc/swaps | wc -l) -le 1 ]]; then
@@ -32,7 +38,6 @@ if [[ $(cat /proc/swaps | wc -l) -le 1 ]]; then
         if ! grep -q "/swapfile" /etc/fstab; then
             echo "/swapfile swap swap defaults 0 0" >> /etc/fstab
         fi
-        echo "Файл подкачки размером $swapfilesize успешно создан и активирован"
         swapon --show
     else
         echo "Ошибка: не указан размер файла подкачки"
@@ -43,12 +48,7 @@ else
     swapon --show
 fi
 
-cat >> /etc/sysctl.conf <<EOF
-net.core.default_qdisc=fq
-net.ipv4.tcp_congestion_control=bbr
-EOF
-
-sysctl -p
+SetBBR
 
 read -p "Сменить пароль для root пользователя? [n/Y]: " input
 if [[ "$input" == "y" || "$input" == "Y" ]]; then
@@ -70,7 +70,7 @@ if [[ -z "$newusername" ]]; then
 fi
 
 adduser "$newusername"
-usermod -aG sudo "$newusername"
+usermod -aG "$newusername"
 
 mkdir -p /home/"$newusername"/.ssh
 
@@ -84,7 +84,6 @@ chmod 600 /home/"$newusername"/.ssh/authorized_keys
 
 mkdir -p /home/"$newusername"/.config
 mkdir /home/"$newusername"/Documents
-sudo chown -R "$newusername":"$newusername" /home/"$newusername"
 
 touch openports.log
 
@@ -162,22 +161,16 @@ set encoding=utf8
 set noerrorbells
 set novisualbell
 set noswapfile
+set clipboard=unnamedplus
 EOF
 
 read -p "Установить файловый менеджер yazi? [y/N]: " input
 if [[ "$input" == "y" || "$input" == "Y" ]]; then
     wget -O yazi.zip https://github.com/sxyazi/yazi/releases/latest/download/yazi-x86_64-unknown-linux-gnu.zip
-
     unzip yazi.zip -d yazi-temp
-
     mv yazi-temp/*/{ya,yazi} /usr/local/bin
     rm -rf yazi-temp yazi.zip
-
-    yazi --version
-
     mkdir -p /home/"$newusername"/.config/yazi
-    sudo chown -R "$newusername":"$newusername" /home/"$newusername"/.config/yazi
-
     cat > /home/"$newusername"/.config/yazi/yazi.toml <<EOF
 [mgr]
 show_hidden = true
@@ -197,14 +190,15 @@ rules = [
 	# { name = "*", use = "open" },
 ]
 EOF
+    chown -R "$newusername":"$newusername" /home/"$newusername"/.config/yazi
 fi
 
 goversion="1.25.3"
 goarchive="go${goversion}.linux-amd64.tar.gz"
 
 wget -c "https://go.dev/dl/${goarchive}" -O /tmp/$goarchive
-sudo rm -rf /usr/local/go
-sudo tar -C /usr/local -xzf /tmp/$goarchive
+rm -rf /usr/local/go
+tar -C /usr/local -xzf /tmp/$goarchive
 rm -f /tmp/$goarchive
 
 if ! grep -q '/usr/local/go/bin' "/root/.profile"; then
@@ -329,6 +323,8 @@ chmod 600 /usr/local/etc/xray/config.json
 
 systemctl restart xray
 
+systemctl status xray >> install.log
+
 proxyversion=0.9.5
 
 wget -q --show-progress --timeout=15 --tries=2 -O 3proxy.tar.gz \
@@ -390,6 +386,9 @@ fi
 read -p "Введите базовое имя клиента [user]: " baseproxyusername
 baseproxyusername=${baseproxyusername:-user}
 
+smartproxyserversfile="./smartproxyservers"
+echo "[SmartProxy Servers]" > "$smartproxyserversfile"
+
 proxylinkfile="./proxylinks"
 > "$proxylinkfile"
 
@@ -404,7 +403,7 @@ EOF
 
 for ((i=0; i<proxyclicount; i++)); do
     proxyport=$((httpproxyport + i))
-    proxyusername="proxy${baseproxyusername}$((i+1))"
+    proxyusername="${baseproxyusername}$((i+1))"
     proxyuserpass=$(openssl rand -base64 12 | tr -d '/+' | cut -c1-12)
 
     echo "users $proxyusername:CL:$proxyuserpass" >> "$proxycfgfile"
@@ -415,12 +414,13 @@ flush
 EOF
 
     echo "http://$proxyusername:$proxyuserpass@$serverip:$proxyport" >> "$proxylinkfile"
+    echo "$serverip [HTTP] [proxy$((i+1))] [$socksusername] [$socksuserpass]" >> "$smartproxyserversfile"
     echo "HttpProxy: $proxyport" >> openports.log
 done
 
 for ((i=0; i<socksproxyclicount; i++)); do
     socksport=$((socksproxyport + i))
-    socksusername="socks${baseproxyusername}$((i+1))"
+    socksusername="${baseproxyusername}$((i+1))"
     socksuserpass=$(openssl rand -base64 12 | tr -d '/+' | cut -c1-12)
 
     echo "users $socksusername:CL:$socksuserpass" >> "$proxycfgfile"
@@ -455,16 +455,111 @@ systemctl daemon-reload
 systemctl enable 3proxy
 systemctl start 3proxy
 
+systemctl status 3proxy >> install.log
+
 wget https://raw.githubusercontent.com/nikita55612/install/main/proxyserv/servinfo.go
 
 apt update && apt upgrade -y
+chown -R "$newusername":"$newusername" /home/"$newusername"
+chown -R "$newusername":"$newusername" /home/"$newusername"/.config
+
+cat > servinfo.go <<EOF
+package main
+
+import (
+	"flag"
+	"fmt"
+	"net/http"
+	"os/exec"
+	"strings"
+	"sync/atomic"
+	"time"
+)
+
+const DEFAULT_HOST = ""
+const DEFAULT_PORT = 8090
+var tsLast atomic.Int64
+var infoCache = ""
+
+func execCommand(name string, arg ...string) string {
+	cmd := exec.Command(name, arg...)
+	stdout, err := cmd.Output()
+	if err != nil {
+		fmt.Println(err.Error())
+		return ""
+	}
+	return string(stdout)
+}
+
+func info(w http.ResponseWriter, req *http.Request) {
+	tsNow := time.Now().Unix()
+	if tsNow-tsLast.Load() <= 3 {
+		fmt.Fprintf(w, infoCache)
+		return
+	}
+	tsLast.Store(tsNow)
+	infoCache = ""
+	infoCache += strings.ReplaceAll(strings.ReplaceAll(execCommand("fastfetch", "--pipe", "--structure", "separator:os:separator:host:kernel:uptime:packages:shell:de:wm:wmtheme:theme:icons:font:cpu:gpu:memory:disk:localip"), "[34C", ""), "[31C", "")
+	infoCache += execCommand("vnstat")
+	infoCache += execCommand("vnstat", "-h")
+	infoCache += execCommand("vnstat", "-hg")
+	infoCache += execCommand("vnstat", "-5")
+	fmt.Fprintf(w, infoCache)
+
+}
+
+func main() {
+	host := flag.String("host", DEFAULT_HOST, "host 0.0.0.0")
+	port := flag.Int("port", DEFAULT_PORT, "port 8090")
+	flag.Parse()
+	http.HandleFunc("/info", info)
+	addr := fmt.Sprintf("%s:%d", *host, *port)
+	fmt.Printf("http://%s/info\n", addr)
+	http.ListenAndServe(addr, nil)
+}
+EOF
+
+go build -o /usr/local/bin/servinfo servinfo.go
+
+read -p "Введите порт для servinfo: " servinfoport
+
+if ! [[ "$servinfoport" =~ ^[0-9]+$ ]] || [ "$servinfoport" -lt 1024 ] || [ "$servinfoport" -gt 65535 ]; then
+    echo "Ошибка: Порт должен быть числом от 1024 до 65535"
+    exit 1
+fi
+
+echo "servinfo: $servinfoport" >> openports.log
+
+cat > /etc/systemd/system/servinfo.service <<EOF
+[Unit]
+Description=servinfoapp
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/servinfo -host=0.0.0.0 -port=$servinfoport
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable servinfo.service
+systemctl start servinfo.service
+
+systemctl status servinfo.service >> install.log
 
 cat >> install.log <<EOF
-Ссылки для подключения proxy сохранены в $proxylinkfile:"
+Smart Proxy file $smartproxyserversfile:
+$(cat "$smartproxyserversfile")
+
+Ссылки для подключения proxy сохранены в $proxylinkfile:
 $(cat "$proxylinkfile")
 
-echo "Ссылки для подключения xray сохранены в $xraylinkfile:"
+Ссылки для подключения xray сохранены в $xraylinkfile:
 $(cat "$xraylinkfile")
+
+servinfo.service: http://$serverip:$servinfoport/info
 EOF
 
 echo ""
