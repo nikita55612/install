@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# wget https://raw.githubusercontent.com/nikita55612/install/main/proxyserv/install.sh
+# wget https://raw.githubusercontent.com/nikita55612/install/main/proxyserv/install.sh && chmod +x install.sh && ./install.sh
 
 set -e
 
@@ -425,7 +425,7 @@ done
 
 for ((i=0; i<socksproxyclicount; i++)); do
     socksport=$((socksproxyport + i))
-    socksusername="$socks{baseproxyusername}$((i+1))"
+    socksusername="$socks5{baseproxyusername}$((i+1))"
     socksuserpass=$(openssl rand -base64 12 | tr -d '/+' | cut -c1-12)
 
     echo "users $socksusername:CL:$socksuserpass" >> "$proxycfgfile"
