@@ -425,7 +425,7 @@ done
 
 for ((i=0; i<socksproxyclicount; i++)); do
     socksport=$((socksproxyport + i))
-    socksusername="${baseproxyusername}$((i+1))"
+    socksusername="$socks{baseproxyusername}$((i+1))"
     socksuserpass=$(openssl rand -base64 12 | tr -d '/+' | cut -c1-12)
 
     echo "users $socksusername:CL:$socksuserpass" >> "$proxycfgfile"
