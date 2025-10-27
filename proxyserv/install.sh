@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# wget https://raw.githubusercontent.com/nikita55612/install/main/proxyserv/install.sh
+
 set -e
 
 if [[ $EUID -ne 0 ]]; then
@@ -223,10 +225,10 @@ fi
 
 bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install -u root
 
-read -p "Введите порт Xray [443]: " xrayport
-xrayport=${xrayport:-443}
+read -p "Введите порт Xray [443]: " xraystartport
+xraystartport=${xraystartport:-443}
 
-if ! [[ "$xrayport" =~ ^[0-9]+$ ]] || [ "$xrayport" -lt 1024 ] || [ "$xrayport" -gt 65535 ]; then
+if ! [[ "$xraystartport" =~ ^[0-9]+$ ]] || [ "$xraystartport" -lt 1024 ] || [ "$xraystartport" -gt 65535 ]; then
     echo "Ошибка: Порт должен быть числом от 1024 до 65535"
     exit 1
 fi
@@ -250,7 +252,7 @@ inboundsjson="["
 xraylinkfile="./xraylinks"
 > "$xraylinkfile"
 
-currentxrayport=$xray_start_port
+currentxrayport=$xraystartport
 
 for ((i=0; i<xrayclicount; i++)); do
     xrayport=$currentxrayport
@@ -352,6 +354,8 @@ fi
 
 rm -rf 3proxy
 
+cat openports.log
+
 read -p "Введите базовый порт для HTTP proxy (по умолчанию 44667): " httpproxyport
 httpproxyport=${httpproxyport:-44667}
 
@@ -415,7 +419,7 @@ flush
 EOF
 
     echo "http://$proxyusername:$proxyuserpass@$serverip:$proxyport" >> "$proxylinkfile"
-    echo "$serverip [HTTP] [proxy$((i+1))] [$socksusername] [$socksuserpass]" >> "$smartproxyserversfile"
+    echo "$serverip:$proxyport [HTTP] [proxy$((i+1))] [$proxyusername] [$proxyuserpass]" >> "$smartproxyserversfile"
     echo "HttpProxy: $proxyport" >> openports.log
 done
 
@@ -463,62 +467,6 @@ wget https://raw.githubusercontent.com/nikita55612/install/main/proxyserv/servin
 apt update && apt upgrade -y
 chown -R "$newusername":"$newusername" /home/"$newusername"
 chown -R "$newusername":"$newusername" /home/"$newusername"/.config
-
-cat > servinfo.go <<EOF
-package main
-
-import (
-	"flag"
-	"fmt"
-	"net/http"
-	"os/exec"
-	"strings"
-	"sync/atomic"
-	"time"
-)
-
-const DEFAULT_HOST = ""
-const DEFAULT_PORT = 8090
-var tsLast atomic.Int64
-var infoCache = ""
-
-func execCommand(name string, arg ...string) string {
-	cmd := exec.Command(name, arg...)
-	stdout, err := cmd.Output()
-	if err != nil {
-		fmt.Println(err.Error())
-		return ""
-	}
-	return string(stdout)
-}
-
-func info(w http.ResponseWriter, req *http.Request) {
-	tsNow := time.Now().Unix()
-	if tsNow-tsLast.Load() <= 3 {
-		fmt.Fprintf(w, infoCache)
-		return
-	}
-	tsLast.Store(tsNow)
-	infoCache = ""
-	infoCache += strings.ReplaceAll(strings.ReplaceAll(execCommand("fastfetch", "--pipe", "--structure", "separator:os:separator:host:kernel:uptime:packages:shell:de:wm:wmtheme:theme:icons:font:cpu:gpu:memory:disk:localip"), "[34C", ""), "[31C", "")
-	infoCache += execCommand("vnstat")
-	infoCache += execCommand("vnstat", "-h")
-	infoCache += execCommand("vnstat", "-hg")
-	infoCache += execCommand("vnstat", "-5")
-	fmt.Fprintf(w, infoCache)
-
-}
-
-func main() {
-	host := flag.String("host", DEFAULT_HOST, "host 0.0.0.0")
-	port := flag.Int("port", DEFAULT_PORT, "port 8090")
-	flag.Parse()
-	http.HandleFunc("/info", info)
-	addr := fmt.Sprintf("%s:%d", *host, *port)
-	fmt.Printf("http://%s/info\n", addr)
-	http.ListenAndServe(addr, nil)
-}
-EOF
 
 go build -o /usr/local/bin/servinfo servinfo.go
 
